@@ -1,23 +1,36 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navigation } from "./components/Navigation";
 import { PdfUpload } from "./components/PdfUpload";
 import { ChatPanel } from "./components/ChatPanel";
 import { ClaimsView } from "./components/ClaimsView";
 import { SummaryView } from "./components/SummaryView";
 import { BriefView } from "./components/BriefView";
+import { LimitationsView } from "./components/LimitationsView";
 import { Flashcards } from "./components/Flashcards";
 import { ConceptMap } from "./components/ConceptMap";
 import { apiClient } from "./api/client";
-import { Loader2, AlertCircle, X, CheckCircle } from "lucide-react";
+import { Loader2, AlertCircle, AlertTriangle, X, CheckCircle } from "lucide-react";
 
 function App() {
   const [paperId, setPaperId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("chat");
+  const [isDemoFallback, setIsDemoFallback] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [processingState, setProcessingState] = useState<{ isProcessing: boolean; message: string }>({
     isProcessing: false,
     message: "",
   });
+
+  useEffect(() => {
+    const handleFallbackDetected = () => {
+      setIsDemoFallback(true);
+    };
+
+    window.addEventListener("episteme-fallback-detected", handleFallbackDetected);
+    return () => {
+      window.removeEventListener("episteme-fallback-detected", handleFallbackDetected);
+    };
+  }, []);
 
   const showToast = (message: string, type: "success" | "error" = "error") => {
     setToast({ message, type });
@@ -69,6 +82,8 @@ function App() {
         return <SummaryView paperId={paperId} />;
       case "brief":
         return <BriefView paperId={paperId} />;
+      case "limitations":
+        return <LimitationsView paperId={paperId} />;
       case "flashcards":
         return <Flashcards paperId={paperId} />;
       case "graph":
@@ -80,6 +95,14 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#060814] text-slate-100 flex flex-col relative font-sans">
+      {/* Sticky Demo Fallback Warning Banner */}
+      {isDemoFallback && (
+        <div className="bg-amber-500/20 border-b border-amber-500/40 text-amber-200 px-4 py-2.5 flex items-center justify-center gap-2 text-xs md:text-sm font-semibold sticky top-0 z-50 backdrop-blur-md shadow-lg">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>⚠️ API Connection Failed or Rate Limited: Displaying offline cached demo data.</span>
+        </div>
+      )}
+
       {/* Toast Notification Banner */}
       {toast && (
         <div className="fixed top-6 right-6 z-50 animate-fadeIn duration-200">

@@ -102,12 +102,14 @@ class VectorStore:
             metadatas = results["metadatas"][0]
             
             for idx in range(len(documents)):
-                # Default to page 1 if not present
-                page = metadatas[idx].get("page", 1) if metadatas[idx] else 1
+                meta = metadatas[idx] if metadatas and idx < len(metadatas) else {}
+                page = meta.get("page", 1) if meta else 1
+                page_display = meta.get("page_display", str(page)) if meta else str(page)
                 formatted_results.append({
                     "chunk_id": ids[idx],
                     "text": documents[idx],
-                    "page": page
+                    "page": page,
+                    "page_display": page_display
                 })
                 
         return formatted_results

@@ -25,7 +25,7 @@ export const Flashcards: React.FC<FlashcardsProps> = ({ paperId }) => {
       setError(null);
       try {
         const data = await apiClient.getFlashcards(paperId);
-        setCards(data || []);
+        setCards(data?.flashcards || []);
       } catch (err: any) {
         setError(err.message || "Failed to load flashcards.");
       } finally {
@@ -36,10 +36,43 @@ export const Flashcards: React.FC<FlashcardsProps> = ({ paperId }) => {
     fetchCards();
   }, [paperId]);
 
+  const handleGrade = (rating: "hard" | "good" | "easy") => {
+    if (cards.length === 0) return;
+
+    setIsFlipped(false);
+    
+    setTimeout(() => {
+      setCards((prevCards) => {
+        if (prevCards.length <= 1) return prevCards;
+
+        const currentCard = prevCards[currentIndex];
+        const remainingCards = prevCards.filter((_, idx) => idx !== currentIndex);
+
+        if (rating === "hard") {
+          // Re-insert card 1-2 positions away in remaining deck
+          const insertIdx = Math.min(1, remainingCards.length);
+          const newDeck = [...remainingCards];
+          newDeck.splice(insertIdx, 0, { ...currentCard, difficulty: "Hard" });
+          return newDeck;
+        } else if (rating === "good") {
+          // Move card to the middle of remaining deck
+          const midIdx = Math.floor(remainingCards.length / 2);
+          const newDeck = [...remainingCards];
+          newDeck.splice(midIdx, 0, { ...currentCard, difficulty: "Medium" });
+          return newDeck;
+        } else {
+          // Move card to very end of the deck
+          return [...remainingCards, { ...currentCard, difficulty: "Easy" }];
+        }
+      });
+
+      setCurrentIndex((prev) => (prev >= cards.length - 1 ? 0 : prev));
+    }, 150);
+  };
+
   const handleNext = () => {
     if (currentIndex < cards.length - 1) {
       setIsFlipped(false);
-      // Wait for flip back transition before changing card content
       setTimeout(() => {
         setCurrentIndex((prev) => prev + 1);
       }, 150);
@@ -76,7 +109,8 @@ export const Flashcards: React.FC<FlashcardsProps> = ({ paperId }) => {
     );
   }
 
-  const currentCard = cards[currentIndex];
+  const safeIndex = Math.min(currentIndex, cards.length - 1);
+  const currentCard = cards[safeIndex] || cards[0];
   const difficultyColors =
     currentCard.difficulty === "Easy"
       ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
@@ -94,11 +128,11 @@ export const Flashcards: React.FC<FlashcardsProps> = ({ paperId }) => {
             <span>Active Recall Deck</span>
           </h2>
           <p className="text-slate-400 text-sm">
-            Combat memory decay by testing yourself on core conceptual claims.
+            FSRS Spaced Repetition active. Grade card recall to schedule optimal review intervals.
           </p>
         </div>
         <div className="px-3 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 text-xs font-semibold">
-          Card {currentIndex + 1} of {cards.length}
+          Card {safeIndex + 1} of {cards.length}
         </div>
       </div>
 
@@ -150,41 +184,75 @@ export const Flashcards: React.FC<FlashcardsProps> = ({ paperId }) => {
             </div>
 
             <div className="text-center text-[10px] text-violet-500/60 font-semibold uppercase tracking-wider">
-              Click Card to Flip Back
+              Grade recall below to schedule next review
             </div>
           </div>
         </div>
       </div>
 
-      {/* Control Buttons */}
-      <div className="flex items-center justify-between px-2 pt-2">
-        <button
-          onClick={handlePrev}
-          disabled={currentIndex === 0}
-          className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-950/20 border border-slate-800 disabled:border-slate-900 text-slate-300 disabled:text-slate-600 rounded-xl text-sm font-semibold transition-all duration-150 cursor-pointer disabled:cursor-not-allowed"
-        >
-          <ArrowLeft className="w-4 h-4 shrink-0" />
-          <span>Previous</span>
-        </button>
+      {/* Control / FSRS Spaced Repetition Grading Bar */}
+      {isFlipped ? (
+        <div className="space-y-2 pt-2">
+          <div className="grid grid-cols-3 gap-3">
+            <button
+              onClick={() => handleGrade("hard")}
+              className="py-3 px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-bold transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 shadow-lg"
+            >
+              <span>🔴</span>
+              <span>Hard (Soon)</span>
+            </button>
 
-        <button
-          onClick={() => setIsFlipped(!isFlipped)}
-          className="px-6 py-2.5 bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-xl text-sm font-bold transition-all duration-150 cursor-pointer flex items-center gap-2"
-        >
-          <Sparkles className="w-4 h-4" />
-          <span>{isFlipped ? "Show Question" : "Show Answer"}</span>
-        </button>
+            <button
+              onClick={() => handleGrade("good")}
+              className="py-3 px-4 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-xl text-sm font-bold transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 shadow-lg"
+            >
+              <span>🟡</span>
+              <span>Good (Medium)</span>
+            </button>
 
-        <button
-          onClick={handleNext}
-          disabled={currentIndex === cards.length - 1}
-          className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-950/20 border border-slate-800 disabled:border-slate-900 text-slate-300 disabled:text-slate-600 rounded-xl text-sm font-semibold transition-all duration-150 cursor-pointer disabled:cursor-not-allowed"
-        >
-          <span>Next</span>
-          <ArrowRight className="w-4 h-4 shrink-0" />
-        </button>
-      </div>
+            <button
+              onClick={() => handleGrade("easy")}
+              className="py-3 px-4 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-sm font-bold transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 shadow-lg"
+            >
+              <span>🟢</span>
+              <span>Easy (Later)</span>
+            </button>
+          </div>
+          <p className="text-[10px] text-center text-slate-500 font-medium">
+            FSRS Spaced Repetition: Hard re-inserts 1-2 positions away; Good inserts into middle deck; Easy pushes to end.
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between px-2 pt-2">
+          <button
+            onClick={handlePrev}
+            disabled={safeIndex === 0}
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-950/20 border border-slate-800 disabled:border-slate-900 text-slate-300 disabled:text-slate-600 rounded-xl text-sm font-semibold transition-all duration-150 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <ArrowLeft className="w-4 h-4 shrink-0" />
+            <span>Previous</span>
+          </button>
+
+          <button
+            onClick={() => setIsFlipped(true)}
+            className="px-6 py-2.5 bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-xl text-sm font-bold transition-all duration-150 cursor-pointer flex items-center gap-2"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Show Answer</span>
+          </button>
+
+          <button
+            onClick={handleNext}
+            disabled={safeIndex === cards.length - 1}
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-950/20 border border-slate-800 disabled:border-slate-900 text-slate-300 disabled:text-slate-600 rounded-xl text-sm font-semibold transition-all duration-150 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <span>Next</span>
+            <ArrowRight className="w-4 h-4 shrink-0" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
+
 export default Flashcards;

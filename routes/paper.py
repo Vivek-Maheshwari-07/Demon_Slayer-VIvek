@@ -2,9 +2,10 @@ import os
 import uuid
 import json
 import aiofiles
-from typing import List
+from typing import List, Any
 from fastapi import APIRouter, UploadFile, File, HTTPException, Body
 from pydantic import BaseModel
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Import schemas
 from schemas import (
@@ -32,6 +33,67 @@ from generators import (
 )
 from google import genai
 from google.genai import types
+
+# Tenacity exponential backoff wrapper for Gemini API calls
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(min=2, max=10),
+    retry=retry_if_exception_type(Exception),
+    reraise=True
+)
+def generate_content_with_retry(client: genai.Client, model: str, contents: Any, config: Any):
+    return client.models.generate_content(model=model, contents=contents, config=config)
+
+def _get_ask_fallback(question: str, search_results: list) -> AskResponse:
+    citations = []
+    if search_results:
+        for item in search_results[:3]:
+            citations.append(
+                Citation(
+                    text=item["text"][:150] + ("..." if len(item["text"]) > 150 else ""),
+                    page=item["page"],
+                    chunk_id=item["chunk_id"]
+                )
+            )
+    else:
+        citations.append(
+            Citation(
+                text="HQCNN converges 40% faster and exhibits a 15% reduction in total holding and stockout costs compared to classical deep Q-networks (DQN).",
+                page=1,
+                chunk_id="fallback-ask-chunk"
+            )
+        )
+    return AskResponse(
+        answer=f"Offline Fallback Response: The paper demonstrates a Hybrid Quantum-Classical Neural Network (HQCNN) that converges 40% faster and reduces inventory costs by 15% in high-uncertainty regimes (relevant to query: '{question}').",
+        citations=citations,
+        is_fallback=True
+    )
+
+def _get_limitations_fallback() -> LimitationsResponse:
+    fallback_json = """
+    {
+      "limitations": [
+        {
+          "limitation": "Vulnerability to quantum gate errors and decoherence in current NISQ-era hardware.",
+          "citation": {
+            "text": "Finally, we analyze the limitations of current NISQ-era quantum hardware, specifically gate fidelity and qubit coherence times, and propose mitigation strategies for near-term industrial deployment.",
+            "page": 1,
+            "chunk_id": "fallback-chunk-lim-1"
+          }
+        },
+        {
+          "limitation": "Qubit scale constraints requiring classical partitioning of large multi-echelon supply graphs.",
+          "citation": {
+            "text": "Physical execution was limited to 8 qubits due to physical hardware availability, meaning larger scale multi-echelon graphs must be partitioned classically.",
+            "page": 9,
+            "chunk_id": "fallback-chunk-lim-2"
+          }
+        }
+      ],
+      "is_fallback": true
+    }
+    """
+    return LimitationsResponse.model_validate_json(fallback_json)
 
 # Input schema for Q&A
 class AskRequest(BaseModel):
@@ -64,13 +126,20 @@ async def upload_paper(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
         
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File too large. Please upload a PDF under 10MB for the demo."
+        )
+
     paper_id = str(uuid.uuid4())
     temp_file_path = os.path.join(TEMP_DIR, f"{paper_id}.pdf")
     
     # Save file asynchronously
     try:
         async with aiofiles.open(temp_file_path, "wb") as out_file:
-            content = await file.read()
             await out_file.write(content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
@@ -109,7 +178,8 @@ async def upload_paper(file: UploadFile = File(...)):
             response_mime_type="application/json",
             response_schema=MetadataResponse
         )
-        response = client.models.generate_content(
+        response = generate_content_with_retry(
+            client=client,
             model="gemini-2.0-flash",
             contents=prompt,
             config=config
@@ -126,7 +196,8 @@ async def upload_paper(file: UploadFile = File(...)):
             "title": "Ingested Academic Paper",
             "authors": ["Unknown Authors"],
             "abstract": "Abstract not extracted.",
-            "keywords": ["Research"]
+            "keywords": ["Research"],
+            "is_fallback": True
         }
         metadata_cache_path = _get_metadata_cache_path(paper_id)
         async with aiofiles.open(metadata_cache_path, "w", encoding="utf-8") as cache_file:
@@ -147,7 +218,7 @@ async def get_metadata(id: str):
         content = await f.read()
         return MetadataResponse.model_validate_json(content)
 
-@router.get("/paper/{id}/claims", response_model=ClaimsResponse)
+@router.post("/paper/{id}/claims", response_model=ClaimsResponse)
 async def get_claims(id: str):
     """
     Retrieves chunks from the vector store, runs them through the 4-phase CoVe engine,
@@ -187,12 +258,16 @@ async def get_claims(id: str):
         
     return claims_response
 
-@router.get("/paper/{id}/flashcards", response_model=FlashcardsResponse)
+@router.post("/paper/{id}/flashcards", response_model=FlashcardsResponse)
 async def get_flashcards(id: str):
     """
     Reads the cached claims JSON and generates flashcard question-and-answer pairs.
     """
     claims_path = _get_claims_cache_path(id)
+    if not os.environ.get("GEMINI_API_KEY") and not os.path.exists(claims_path):
+        # Return fallback flashcards directly if key missing and claims not generated
+        return generate_flashcards("")
+
     if not os.path.exists(claims_path):
         raise HTTPException(
             status_code=400, 
@@ -208,12 +283,15 @@ async def get_flashcards(id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Flashcard generation failed: {str(e)}")
 
-@router.get("/paper/{id}/conceptmap", response_model=ConceptMapResponse)
+@router.post("/paper/{id}/conceptmap", response_model=ConceptMapResponse)
 async def get_concept_map(id: str):
     """
     Reads the cached claims JSON and generates a nodes/edges concept map.
     """
     claims_path = _get_claims_cache_path(id)
+    if not os.environ.get("GEMINI_API_KEY") and not os.path.exists(claims_path):
+        return generate_conceptmap("")
+
     if not os.path.exists(claims_path):
         raise HTTPException(
             status_code=400, 
@@ -310,27 +388,7 @@ async def get_limitations(id: str):
     formatted_context = "\n\n".join(formatted_chunks_list)
     
     if not os.environ.get("GEMINI_API_KEY"):
-        fallback_json = """
-        [
-          {
-            "limitation": "Vulnerability to quantum gate errors and decoherence in current NISQ-era hardware.",
-            "citation": {
-              "text": "Finally, we analyze the limitations of current NISQ-era quantum hardware, specifically gate fidelity and qubit coherence times, and propose mitigation strategies for near-term industrial deployment.",
-              "page": 1,
-              "chunk_id": "fallback-chunk-lim-1"
-            }
-          },
-          {
-            "limitation": "Qubit scale constraints requiring classical partitioning of large multi-echelon supply graphs.",
-            "citation": {
-              "text": "Physical execution was limited to 8 qubits due to physical hardware availability, meaning larger scale multi-echelon graphs must be partitioned classically.",
-              "page": 9,
-              "chunk_id": "fallback-chunk-lim-2"
-            }
-          }
-        ]
-        """
-        return LimitationsResponse.model_validate_json(fallback_json)
+        return _get_limitations_fallback()
 
     try:
         client = genai.Client()
@@ -345,20 +403,22 @@ async def get_limitations(id: str):
             response_mime_type="application/json",
             response_schema=LimitationsResponse
         )
-        response = client.models.generate_content(
+        response = generate_content_with_retry(
+            client=client,
             model="gemini-2.0-flash",
             contents=prompt,
             config=config
         )
         return LimitationsResponse.model_validate_json(response.text)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Limitations extraction failed: {str(e)}")
+        print(f"Warning: Limitations extraction failed after retries ({e}). Serving fallback response.")
+        return _get_limitations_fallback()
 
 @router.post("/paper/{id}/ask", response_model=AskResponse)
 async def ask_question(id: str, request: AskRequest):
     """
     Performs vector similarity search to find relevant context, then synthesizes
-    an answer verified with citations.
+    an answer verified with citations using Gemini 2.0 Flash with tenacity retry policy.
     """
     # 1. Query vector store for top 6 chunks matching question
     try:
@@ -367,36 +427,53 @@ async def ask_question(id: str, request: AskRequest):
         raise HTTPException(status_code=500, detail=f"Vector search failed: {str(e)}")
 
     if not search_results:
-        # Fallback empty answer
         return AskResponse(
             answer="No relevant content found in the database.",
-            citations=[]
+            citations=[],
+            is_fallback=True
         )
 
-    # TODO: AI Lead should implement the actual Gemini LLM RAG prompt synthesis and execution here.
-    # For now, we stub the response using the retrieved chunks and formulate a direct answer.
-    
-    # Simple heuristic to extract citation details from retrieved chunks
-    citations = []
-    for idx, item in enumerate(search_results):
-        citations.append(
-            Citation(
-                text=item["text"][:150] + "...",  # Snippet
-                page=item["page"],
-                chunk_id=item["chunk_id"]
+    if not os.environ.get("GEMINI_API_KEY"):
+        return _get_ask_fallback(request.question, search_results)
+
+    try:
+        # 2. Format retrieved chunks into context string with Chunk IDs and Page numbers
+        formatted_chunks = []
+        for item in search_results:
+            formatted_chunks.append(
+                f"[Chunk ID: {item['chunk_id']} | Page: {item['page']}]\n{item['text']}"
             )
+        context_str = "\n\n".join(formatted_chunks)
+
+        # 3. Formulate RAG prompt enforcing strict grounding and citations
+        client = genai.Client()
+        prompt = (
+            f"You are a scientific Q&A assistant. Answer the user question based ONLY on the provided document context chunks.\n\n"
+            f"DOCUMENT CONTEXT CHUNKS:\n{context_str}\n\n"
+            f"USER QUESTION:\n{request.question}\n\n"
+            f"INSTRUCTIONS:\n"
+            f"1. Answer the question accurately using ONLY the information in the context chunks.\n"
+            f"2. For every factual claim or supporting statement in your answer, provide exact verbatim quotes and page numbers.\n"
+            f"3. Structure your output strictly as a JSON object conforming to the AskResponse schema."
         )
         
-    combined_context_snippets = "\n".join([f"- Page {item['page']}: {item['text'][:100]}..." for item in search_results])
-    
-    answer_text = (
-        f"This is an automated RAG response stub. We found {len(search_results)} relevant passages "
-        f"matching your question: '{request.question}'. The retrieved information spans "
-        f"page(s) {', '.join(set(str(item['page']) for item in search_results))}. "
-        f"Retrieved Context Snippets:\n{combined_context_snippets}"
-    )
-    
-    return AskResponse(
-        answer=answer_text,
-        citations=citations
-    )
+        config = types.GenerateContentConfig(
+            temperature=0.0,
+            system_instruction="Answer the following user question using ONLY the provided context chunks. You must provide exact verbatim quotes and page numbers for every claim in your answer.",
+            response_mime_type="application/json",
+            response_schema=AskResponse,
+        )
+
+        # 4. Execute using Gemini 2.0 Flash wrapped in tenacity exponential backoff retries
+        response = generate_content_with_retry(
+            client=client,
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=config
+        )
+
+        return AskResponse.model_validate_json(response.text)
+
+    except Exception as e:
+        print(f"Warning: RAG Generation failed after retries ({e}). Serving fallback response.")
+        return _get_ask_fallback(request.question, search_results)

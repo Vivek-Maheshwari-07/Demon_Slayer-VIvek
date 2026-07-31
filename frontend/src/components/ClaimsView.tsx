@@ -31,7 +31,7 @@ export const ClaimsView: React.FC<ClaimsViewProps> = ({ paperId }) => {
       setError(null);
       try {
         const data = await apiClient.getClaims(paperId);
-        setClaims(data || []);
+        setClaims(data?.claims || []);
       } catch (err: any) {
         setError(err.message || "Failed to retrieve verified claims.");
       } finally {

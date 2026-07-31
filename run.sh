@@ -1,46 +1,53 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# EPISTEME One-Click Boot Script
-# Spins up both FastAPI (port 8000) and Vite React (port 5173) concurrently.
+# EPISTEME One-Click Application Launcher
+# Boots FastAPI backend and Vite React frontend concurrently.
 
-# 1. Environment validation
-if [ ! -f .env ]; then
-    echo "⚠️  Warning: .env file not found in the root directory!"
-    echo "Creating a dummy .env template. Please populate GEMINI_API_KEY inside it."
-    echo "GEMINI_API_KEY=your_key_here" > .env
-else
-    # Check if GEMINI_API_KEY is defined and not placeholder
-    if grep -q "GEMINI_API_KEY=your_key_here" .env || ! grep -q "GEMINI_API_KEY=" .env; then
-        echo "⚠️  Warning: GEMINI_API_KEY is not configured in .env!"
-        echo "Backend will operate using high-fidelity mock data responses for tests."
-    fi
+echo "============================================================"
+echo "🚀 Starting EPISTEME Research Engine..."
+echo "============================================================"
+
+# 1. Environment File Check
+if [ ! -f ".env" ]; then
+    echo "⚠️ Warning: .env file not found in root directory."
+    echo "GEMINI_API_KEY=" > .env
+    echo "Created a template .env file. Add your GEMINI_API_KEY for live LLM features."
 fi
 
-# 2. Shutdown cleaner
+# 2. Cleanup Handler for Graceful Exit (CTRL+C)
 cleanup() {
-    echo -e "\n🛑  Shutting down EPISTEME servers..."
-    # Terminate all processes in the child process group
+    echo ""
+    echo "============================================================"
+    echo "🛑 Shutting down EPISTEME servers..."
+    echo "============================================================"
     kill $(jobs -p) 2>/dev/null
     exit 0
 }
 
-# Trap CTRL+C, SIGINT, SIGTERM to run cleanup
 trap cleanup INT TERM EXIT
 
-echo "🚀  Booting EPISTEME Backend (Uvicorn)..."
+# 3. Boot Backend Server (FastAPI on Port 8000)
+echo "📦 Booting FastAPI Backend Server (http://localhost:8000)..."
 uvicorn main:app --reload --port 8000 &
 BACKEND_PID=$!
 
-echo "🚀  Booting EPISTEME Frontend (Vite)..."
-npm run dev --prefix frontend &
-FRONTEND_PID=$!
+# Wait briefly for backend startup
+sleep 2
 
-echo "=========================================================="
-echo "EPISTEME companion is launching!"
-echo "Backend:  http://localhost:8000"
-echo "Frontend: http://localhost:5173"
-echo "=========================================================="
-echo "Press CTRL+C to cleanly terminate both servers."
+# 4. Boot Frontend Server (Vite React on Port 5173)
+echo "💻 Booting React Vite Frontend Server (http://localhost:5173)..."
+if [ -d "frontend" ]; then
+    cd frontend && npm run dev &
+    FRONTEND_PID=$!
+    cd ..
+else
+    echo "❌ Error: 'frontend' directory not found!"
+    exit 1
+fi
 
-# Keep parent script alive to wait for background jobs
+echo "============================================================"
+echo "✨ EPISTEME is live! Press CTRL+C to terminate all services."
+echo "============================================================"
+
+# Wait for background jobs
 wait

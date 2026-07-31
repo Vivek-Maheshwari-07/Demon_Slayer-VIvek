@@ -46,12 +46,12 @@ def extract_text_with_pages(pdf_path: str) -> List[Dict[str, Any]]:
 def chunk_text(sentence_data: List[Dict[str, Any]], target_words: int = 350) -> List[Dict[str, Any]]:
     """
     Groups individual sentences into semantic chunks of approximately target_words (~400-500 tokens).
-    Assigns each chunk a unique uuid4 ID and records the page number where the chunk begins.
+    Assigns each chunk a unique uuid4 ID and records all page numbers touched by the chunk.
     """
     chunks = []
     current_chunk_sentences = []
     current_word_count = 0
-    current_start_page = None
+    current_pages = []
 
     for item in sentence_data:
         words = item["text"].split()
@@ -59,37 +59,51 @@ def chunk_text(sentence_data: List[Dict[str, Any]], target_words: int = 350) -> 
         if not words:
             continue
         
-        # If this is the start of a new chunk, record its page number
-        if not current_chunk_sentences:
-            current_start_page = item["page"]
+        page_num = item["page"]
             
         # Check if adding this sentence would exceed the target word count
         # (Only split if we already have some sentences in the current chunk)
         if current_word_count > 0 and (current_word_count + word_count) > target_words:
             chunk_text_str = " ".join(current_chunk_sentences)
+            sorted_pages = sorted(list(set(current_pages)))
+            start_page = sorted_pages[0] if sorted_pages else 1
+            page_display = f"{sorted_pages[0]}-{sorted_pages[-1]}" if len(sorted_pages) > 1 else str(start_page)
+            pages_str = ",".join(str(p) for p in sorted_pages)
+
             chunks.append({
                 "chunk_id": str(uuid.uuid4()),
                 "text": chunk_text_str,
                 "metadata": {
-                    "page": current_start_page
+                    "page": start_page,
+                    "pages": pages_str,
+                    "page_display": page_display
                 }
             })
             # Reset trackers for next chunk
             current_chunk_sentences = [item["text"]]
             current_word_count = word_count
-            current_start_page = item["page"]
+            current_pages = [page_num]
         else:
             current_chunk_sentences.append(item["text"])
             current_word_count += word_count
+            if page_num not in current_pages:
+                current_pages.append(page_num)
 
     # Append any trailing sentences in the last chunk
     if current_chunk_sentences:
         chunk_text_str = " ".join(current_chunk_sentences)
+        sorted_pages = sorted(list(set(current_pages)))
+        start_page = sorted_pages[0] if sorted_pages else 1
+        page_display = f"{sorted_pages[0]}-{sorted_pages[-1]}" if len(sorted_pages) > 1 else str(start_page)
+        pages_str = ",".join(str(p) for p in sorted_pages)
+
         chunks.append({
             "chunk_id": str(uuid.uuid4()),
             "text": chunk_text_str,
             "metadata": {
-                "page": current_start_page
+                "page": start_page,
+                "pages": pages_str,
+                "page_display": page_display
             }
         })
 

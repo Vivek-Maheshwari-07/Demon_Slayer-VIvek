@@ -1,10 +1,11 @@
 from typing import List, Literal
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field
 
 class Citation(BaseModel):
     text: str = Field(..., description="The exact verbatim quote from the text")
     page: int = Field(..., description="The integer page number")
     chunk_id: str = Field(..., description="The UUID of the chunk")
+    page_display: str = Field(default="", description="Formatted page range string e.g. '4-5' or '4'")
 
 class UploadResponse(BaseModel):
     paper_id: str = Field(..., description="Unique identifier for the uploaded paper")
@@ -14,14 +15,17 @@ class MetadataResponse(BaseModel):
     authors: List[str] = Field(..., description="List of authors")
     abstract: str = Field(..., description="Abstract of the paper")
     keywords: List[str] = Field(..., description="Keywords associated with the paper")
+    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
 
 class AskResponse(BaseModel):
     answer: str = Field(..., description="Answer generated from the query")
     citations: List[Citation] = Field(..., description="List of citations verifying the answer")
+    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
 
 class SummaryResponse(BaseModel):
     executive: str = Field(..., description="Executive summary (1 paragraph)")
     detailed: str = Field(..., description="Detailed summary")
+    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
 
 class ClaimEvidence(BaseModel):
     claim: str = Field(..., description="Extracted claim from the text")
@@ -29,23 +33,26 @@ class ClaimEvidence(BaseModel):
     citation: Citation = Field(..., description="Citation details for the evidence")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score between 0.0 and 1.0")
 
-class ClaimsResponse(RootModel[List[ClaimEvidence]]):
-    pass
+class ClaimsResponse(BaseModel):
+    claims: List[ClaimEvidence] = Field(..., description="List of extracted verified claims")
+    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
 
 class Limitation(BaseModel):
     limitation: str = Field(..., description="Identified limitation of the paper")
     citation: Citation = Field(..., description="Citation details for the limitation")
 
-class LimitationsResponse(RootModel[List[Limitation]]):
-    pass
+class LimitationsResponse(BaseModel):
+    limitations: List[Limitation] = Field(..., description="List of paper limitations")
+    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
 
 class Flashcard(BaseModel):
     question: str = Field(..., description="Question for study")
     answer: str = Field(..., description="Answer for the question")
     difficulty: Literal["Easy", "Medium", "Hard"] = Field(..., description="Difficulty level")
 
-class FlashcardsResponse(RootModel[List[Flashcard]]):
-    pass
+class FlashcardsResponse(BaseModel):
+    flashcards: List[Flashcard] = Field(..., description="List of study flashcards")
+    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
 
 class Node(BaseModel):
     id: str = Field(..., description="Unique node ID (e.g., entity or concept)")
@@ -59,6 +66,7 @@ class Edge(BaseModel):
 class ConceptMapResponse(BaseModel):
     nodes: List[Node] = Field(..., description="List of concepts (nodes) in the graph")
     edges: List[Edge] = Field(..., description="List of relations (edges) between concepts")
+    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
 
 class BriefResponse(BaseModel):
     problem: str = Field(..., description="The main research problem")
@@ -68,3 +76,4 @@ class BriefResponse(BaseModel):
     limitations: str = Field(..., description="Core limitations identified")
     future_work: str = Field(..., description="Suggested future directions")
     contribution: str = Field(..., description="Main contribution of the work")
+    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")

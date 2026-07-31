@@ -6,6 +6,7 @@ import {
   BrainCircuit,
   Copy,
   BookOpen,
+  AlertTriangle,
   LogOut,
 } from "lucide-react";
 
@@ -25,6 +26,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: "claims", label: "Verified Claims", icon: CheckCircle },
     { id: "summary", label: "Research Summary", icon: FileText },
     { id: "brief", label: "Technical Brief", icon: BookOpen },
+    { id: "limitations", label: "Paper Limitations", icon: AlertTriangle },
     { id: "flashcards", label: "Active Recall", icon: Copy },
     { id: "graph", label: "Concept Graph", icon: BrainCircuit },
   ];

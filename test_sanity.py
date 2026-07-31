@@ -11,7 +11,7 @@ GREEN = "\033[92m"
 RED = "\033[91m"
 RESET = "\033[0m"
 
-def create_dummy_pdf():
+def create_dummy_pdf() -> bool:
     """Generates a small valid PDF file on the fly with text contents."""
     try:
         doc = fitz.open()
@@ -30,7 +30,7 @@ def create_dummy_pdf():
         print(f"Error compiling dummy PDF: {e}")
         return False
 
-def print_result(test_name, success, error_msg=""):
+def print_result(test_name: str, success: bool, error_msg: str = ""):
     if success:
         print(f"[{GREEN}PASS{RESET}] - {test_name}")
     else:
@@ -49,7 +49,7 @@ def main():
     paper_id = None
     
     try:
-        # 1. Health check
+        # 1. Health Check & Warmup Verification
         try:
             res = requests.get(f"{BASE_URL}/")
             print_result("FastAPI Health Check (/) ", res.status_code == 200)
@@ -57,7 +57,7 @@ def main():
             print_result("FastAPI Health Check (/) ", False, "Connection refused. Is server running on port 8000?")
             sys.exit(1)
 
-        # 2. Upload Document
+        # 2. Upload Ingestion (POST /upload)
         try:
             with open(DUMMY_PDF_PATH, "rb") as f:
                 res = requests.post(f"{BASE_URL}/upload", files={"file": f})
@@ -65,7 +65,7 @@ def main():
                 paper_id = res.json().get("paper_id")
                 print_result(f"Upload Ingestion (/upload) [ID: {paper_id}]", True)
             else:
-                print_result("Upload Ingestion (/upload)", False, f"Status: {res.status_code}")
+                print_result("Upload Ingestion (/upload)", False, f"Status: {res.status_code} - {res.text}")
         except Exception as e:
             print_result("Upload Ingestion (/upload)", False, str(e))
 
@@ -73,27 +73,27 @@ def main():
             print(f"[{RED}FAIL{RESET}] - No paper_id retrieved. Skipping subsequent checks.")
             sys.exit(1)
 
-        # 3. Retrieve Metadata
+        # 3. Retrieve Metadata (GET /paper/{id}/metadata)
         try:
             res = requests.get(f"{BASE_URL}/paper/{paper_id}/metadata")
             print_result("Metadata Extraction (/paper/{id}/metadata)", res.status_code == 200)
         except Exception as e:
             print_result("Metadata Extraction (/paper/{id}/metadata)", False, str(e))
 
-        # 4. Extract Claims
+        # 4. Extract Claims (POST /paper/{id}/claims)
         try:
-            res = requests.get(f"{BASE_URL}/paper/{paper_id}/claims")
-            print_result("CoVe Claims Verification (/paper/{id}/claims)", res.status_code == 200)
+            res = requests.post(f"{BASE_URL}/paper/{paper_id}/claims")
+            print_result("CoVe Claims Verification (POST /paper/{id}/claims)", res.status_code == 200)
         except Exception as e:
-            print_result("CoVe Claims Verification (/paper/{id}/claims)", False, str(e))
+            print_result("CoVe Claims Verification (POST /paper/{id}/claims)", False, str(e))
 
-        # 5. Query Q&A
+        # 5. Grounding Q&A Engine (POST /paper/{id}/ask)
         try:
             payload = {"question": "What is the factual precision score mentioned in the evaluation?"}
             res = requests.post(f"{BASE_URL}/paper/{paper_id}/ask", json=payload)
-            print_result("Grounding Q&A Engine (/paper/{id}/ask)", res.status_code == 200)
+            print_result("Grounding Q&A Engine (POST /paper/{id}/ask)", res.status_code == 200)
         except Exception as e:
-            print_result("Grounding Q&A Engine (/paper/{id}/ask)", False, str(e))
+            print_result("Grounding Q&A Engine (POST /paper/{id}/ask)", False, str(e))
 
     finally:
         # Clean up temporary test file

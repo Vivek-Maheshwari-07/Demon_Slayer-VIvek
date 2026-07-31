@@ -4,11 +4,13 @@ import { Quote, ChevronDown, ChevronUp } from "lucide-react";
 interface CitationCardProps {
   text: string;
   page: number;
+  page_display?: string;
   onClick?: () => void;
 }
 
-export const CitationCard: React.FC<CitationCardProps> = ({ text, page, onClick }) => {
+export const CitationCard: React.FC<CitationCardProps> = ({ text, page, page_display, onClick }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const displayLabel = page_display && page_display.trim() ? page_display : String(page);
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -32,7 +34,7 @@ export const CitationCard: React.FC<CitationCardProps> = ({ text, page, onClick 
         }`}
       >
         <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
-        <span>Source: Page {page}</span>
+        <span>Source: Page {displayLabel}</span>
         {isExpanded ? (
           <ChevronUp className="w-3.5 h-3.5 text-violet-400 shrink-0" />
         ) : (
@@ -51,7 +53,7 @@ export const CitationCard: React.FC<CitationCardProps> = ({ text, page, onClick 
           </p>
           <div className="mt-2 text-[10px] text-slate-500 font-medium uppercase tracking-wider flex justify-between items-center">
             <span>Verbatim quote verified</span>
-            <span>Page {page}</span>
+            <span>Page {displayLabel}</span>
           </div>
         </div>
       )}
