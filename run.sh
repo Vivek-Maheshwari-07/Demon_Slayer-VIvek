@@ -10,8 +10,8 @@ echo "============================================================"
 # 1. Environment File Check
 if [ ! -f ".env" ]; then
     echo "⚠️ Warning: .env file not found in root directory."
-    echo "GEMINI_API_KEY=" > .env
-    echo "Created a template .env file. Add your GEMINI_API_KEY for live LLM features."
+    echo "OPENROUTER_API_KEY=" > .env
+    echo "Created a template .env file. Add your OPENROUTER_API_KEY for live LLM features."
 fi
 
 # 2. Cleanup Handler for Graceful Exit (CTRL+C)

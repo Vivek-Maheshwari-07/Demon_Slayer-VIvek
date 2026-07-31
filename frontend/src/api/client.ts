@@ -12,7 +12,7 @@ import type {
 
 export * from "./types";
 
-const BASE_URL = "http://localhost:8000";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${BASE_URL}${path}`;
@@ -89,7 +89,7 @@ export const apiClient = {
    * Retrieves structured technical brief
    */
   async getBrief(paperId: string): Promise<BriefResponse> {
-    return request<BriefResponse>(`/paper/${paperId}/brief`);
+    return request<BriefResponse>(`/paper/${paperId}/brief`, { method: "POST" });
   },
 
   /**

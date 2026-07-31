@@ -1,0 +1,47 @@
+# Secrets & Environment Configuration
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+env/
+.venv/
+
+# Local Vector DB & Application Storage Caches
+storage/chroma/
+storage/cache/*
+storage/temp/*
+!storage/cache/.gitkeep
+!storage/temp/.gitkeep
+
+# Node & Frontend Dependencies / Builds
+node_modules/
+dist/
+build/
+.vite/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Logs & Temporary Test Output
+*.log
+*.tmp
+*.temp
+dummy_test.pdf
+test_doc.pdf
+
+# IDE & Operating System Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

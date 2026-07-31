@@ -1,0 +1,19 @@
+# Web & API Framework
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+aiofiles
+
+# AI & Vector Storage
+openai
+sentence-transformers
+chromadb
+
+# Document Processing & Utilities
+pymupdf
+tenacity
+python-dotenv
+
+# Testing & Utilities
+requests

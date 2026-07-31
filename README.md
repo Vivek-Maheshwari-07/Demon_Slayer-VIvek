@@ -1,141 +1,181 @@
-# EPISTEME: The Self-Verifying, Hallucination-Free Research Engine
+# EPISTEME
 
-> **EPISTEME** is a production-grade AI academic research companion designed to eliminate factual hallucinations, accelerate scientific literature reviews, and combat cognitive fatigue when reading dense research papers.
-
-Built during a 24-hour hackathon, EPISTEME decomposes complex academic papers into interactive, verifiable, and visually searchable concept topologies.
+EPISTEME is an open-source academic research engine designed for fact-grounded paper synthesis, claim verification, and active-recall study generation. It parses scientific literature, indexes semantic chunks with vector embeddings, and executes a multi-phase Chain-of-Verification (CoVe) pipeline to extract factually grounded claims backed by exact page-level citations.
 
 ---
 
-## 🎯 The Problem
+## Key Features
 
-1. **RAG Hallucinations**: Standard Retrieval-Augmented Generation (RAG) models frequently hallucinate facts or conflate page sources, leading to incorrect references in scientific work.
-2. **Dense Summarization Fatigue**: Generic text summaries over-compress technical details, stripping out critical mathematical proofs, dataset limitations, and methodology nuances.
-3. **Memory Decay**: Academic readers struggle to retain key insights without active recall mechanisms or structural entity mapping across long documents.
-
----
-
-## 💡 The Solution
-
-- **Chain-of-Verification (CoVe) Engine**: A 4-phase verification process using `gemini-2.0-flash` that drafts claims, formulates independent verification questions, answers them from raw source chunks, and filters out unverified statements.
-- **Explicit Factual Grounding & Citation Cards**: Clickable, hover-glowing references (`Source: Page 4-5`) that link claims, limitations, and Q&A answers directly to verbatim source quotes.
-- **Spatial Knowledge Topology**: Interactive 2D force-directed node-link graph visualizing entities, algorithms, datasets, and relationships extracted from the paper.
-- **Derived Active Recall Deck**: Lightweight spaced repetition (FSRS) flashcard review queue allowing researchers to grade recall difficulty (*Hard*, *Good*, *Easy*) directly in the UI.
-- **Transparent Failure Resilience**: Transparent UI fallback detection. If API limits trigger, EPISTEME never fails silently—it alerts the user via a top banner and serves verified cached demo data.
+- **Fact-Grounded Q&A (RAG)**: Asymmetric vector similarity retrieval using sentence-transformer embeddings with exact page and quote citations.
+- **Chain-of-Verification (CoVe) Engine**: A 4-phase claim extraction pipeline that drafts, verifies against independent questions, and revises extracted claims to prevent hallucinations.
+- **Active Recall Flashcards**: Automatically transforms verified paper claims into study flashcards categorized by difficulty.
+- **Topological Concept Graphs**: Extracts entity nodes and relationship edges for interactive force-directed network visual analysis.
+- **Structured Research Briefs & Summaries**: Synthesizes structured technical briefs and multi-level executive summaries directly from source text.
 
 ---
 
-## 🏗️ Technical Architecture (24-Hour Build vs. Target Vision)
+## Architecture
 
-To guarantee **100% demo uptime and sub-second retrieval** during a strict 24-hour hackathon, we made deliberate architectural trade-offs:
+EPISTEME operates on a decoupled architecture separating text ingestion, local vector storage, inference orchestration, and the interactive UI layer.
 
-```mermaid
-graph TD
-    PDF[PDF Upload] -->|fitz spatial chunking| Chunks[Semantic Chunks + Page Attribution]
-    Chunks -->|upsert| Chroma[(ChromaDB + BGE-small-en-v1.5)]
-    
-    %% Claims Pipeline
-    Chroma -->|top-k retrieval| CoVe[CoVe Engine]
-    CoVe -->|Phase 1: Draft| Draft[Draft Claims]
-    Draft -->|Phase 2: Question| Questions[Verification Questions]
-    Questions -->|Phase 3: Independent Execution| Answers[Verification Answers]
-    Answers -->|Phase 4: Synthesis| VerifiedClaims[Verified Claims JSON]
-    
-    %% Generators & Cache
-    VerifiedClaims -->|write cache| FileCache[(Local JSON Disk Cache)]
-    FileCache -->|Claims JSON| Gen1[Flashcard Generator]
-    FileCache -->|Claims JSON| Gen2[Concept Map Generator]
-    FileCache -->|Claims JSON| Gen3[Brief Generator]
-    
-    %% API & Frontend
-    Gen1 -->|Flashcards| API[FastAPI Server + Tenacity Retries]
-    Gen2 -->|Concept Map| API
-    Gen3 -->|Technical Brief| API
-    
-    API -->|HTTP / JSON| UI[React 18 + Tailwind Dashboard]
+```
+                  +-----------------------+
+                  |  PyMuPDF PDF Ingest   |
+                  +-----------+-----------+
+                              |
+                              v
+                  +-----------------------+
+                  | Sentence-Transformers |
+                  |  (BAAI/bge-small-en)  |
+                  +-----------+-----------+
+                              |
+                              v
+                  +-----------------------+
+                  | Persistent ChromaDB   |
+                  +-----------+-----------+
+                              |
+                              v
++------------------+  FastAPI  +-----------------------+
+|  React Frontend  | <=======> |  CoVe Claim Engine    |
+| (Vite, TS, Graph)|           |  & OpenRouter Models  |
++------------------+           +-----------------------+
 ```
 
-### Architectural Reconciliation
+---
 
-| System Component | Shipped 24-Hour Hackathon MVP | Target Vision (V2 Production Roadmap) |
-| :--- | :--- | :--- |
-| **Vector Database** | Local embedded **ChromaDB** (`PersistentClient`) | Distributed Neo4j Graph RAG Cluster |
-| **Embedding Model** | `BAAI/bge-small-en-v1.5` (Warmed up in RAM on startup) | Fine-Tuned Domain Embedding Model |
-| **PDF Extraction** | PyMuPDF (`fitz`) block & sentence parser with multi-page bounds | GPU-accelerated Nemotron-Parse Vision Pipeline |
-| **LLM Core** | Google `gemini-2.0-flash` with `tenacity` retries | Fine-tuned open weights model ensemble |
-| **Spaced Repetition** | Client-Side React State FSRS Algorithm | Remote Anki / FSRS Server API Sync |
-| **Task Execution** | Async FastAPI + Local File Cache | Distributed Celery + RabbitMQ Workers |
+## Tech Stack
+
+### Backend
+- **Framework**: Python 3.10+, FastAPI, Uvicorn
+- **Vector DB & Embeddings**: ChromaDB, `sentence-transformers` (`BAAI/bge-small-en-v1.5`)
+- **PDF Parsing**: PyMuPDF (`fitz`)
+- **AI Orchestration**: OpenAI Python SDK configured for OpenRouter API, `tenacity` retry policy
+
+### Frontend
+- **Framework**: React 19, TypeScript, Vite
+- **Styling**: Tailwind CSS v4, Lucide Icons
+- **Visualization**: `react-force-graph-2d`
 
 ---
 
-## 🛠️ Tech Stack
+## Repository Structure
 
-* **Backend**: Python 3.10+, FastAPI, ChromaDB, Sentence-Transformers (`BAAI/bge-small-en-v1.5`), PyMuPDF (`fitz`), `tenacity` (retry resilience), `google-genai` SDK (`gemini-2.0-flash`).
-* **Frontend**: React 18+, TypeScript, Tailwind CSS, Vite, Lucide React Icons, `react-force-graph-2d` (HTML5 Canvas visualization).
+```
+├── main.py                # FastAPI application entrypoint & middleware
+├── ai_client.py           # OpenRouter client wrapper with model fallbacks
+├── cove_pipeline.py       # 4-Phase Chain-of-Verification claim pipeline
+├── generators.py          # Flashcard, concept map, brief, and summary generators
+├── ingest.py              # PDF parsing and sentence-level semantic chunking
+├── vector_store.py        # ChromaDB client & vector search module
+├── schemas.py             # Pydantic data models & API schemas
+├── routes/                # FastAPI endpoint handlers
+│   └── paper.py           # Core paper ingestion, analytical, and RAG routes
+├── tests/                 # Integration and sanity tests
+│   └── test_api.py        # End-to-end API test suite
+├── storage/               # Application storage (Chromadb, temporary files, cache)
+├── frontend/              # React + TypeScript frontend application
+│   ├── src/
+│   │   ├── api/           # Frontend API client and TypeScript definitions
+│   │   ├── components/    # UI components (Graph, Flashcards, Brief, Chat)
+│   │   ├── App.tsx        # Main application layout
+│   │   └── main.tsx       # React DOM entrypoint
+│   ├── package.json
+│   └── vite.config.ts
+├── requirements.txt       # Python dependencies
+├── .env.example           # Environment template
+└── README.md
+```
 
 ---
 
-## ⚡ Quick Start & Installation
+## Getting Started
 
-### 1. Prerequisites
-Ensure you have **Python 3.10+** and **Node.js 18+** installed.
+### Prerequisites
+- Python 3.10 or higher
+- Node.js 18 or higher
 
-### 2. Set Up the Backend
-Clone the repository and install the Python dependencies:
+### Environment Setup
+
+Clone the repository and create a `.env` file in the project root based on `.env.example`:
+
 ```bash
-# Install Python packages
-pip install fastapi uvicorn pydantic pymupdf sentence-transformers chromadb requests google-genai tenacity aiofiles
+cp .env.example .env
 ```
 
-Create a `.env` file in the root directory:
+Define your OpenRouter API key in `.env`:
+
+```env
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+```
+
+### Installation & Running Locally
+
+#### 1. Backend Setup
+
+Initialize a Python virtual environment and install dependencies:
+
 ```bash
-echo "GEMINI_API_KEY=your-actual-gemini-api-key" > .env
-```
-*(Note: If no API key is specified, the server gracefully serves offline cached demo data with a top UI warning banner).*
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-### 3. Set Up the Frontend
-Navigate into the `frontend` directory and install the Node modules:
+# Install requirements
+pip install -r requirements.txt
+
+# Start FastAPI development server
+uvicorn main:app --reload --port 8000
+```
+
+The API documentation will be available at `http://127.0.0.1:8000/docs`.
+
+#### 2. Frontend Setup
+
+In a separate terminal, install dependencies and launch the dev server:
+
 ```bash
 cd frontend
 npm install
-cd ..
+npm run dev
 ```
 
-### 4. Boot the Application (One-Click)
-Run both backend and frontend concurrently using the provided shell script:
-```bash
-chmod +x run.sh
-./run.sh
-```
-
-Alternatively, run them in separate terminals:
-- **Backend**: `uvicorn main:app --reload --port 8000` (Runs at `http://localhost:8000`)
-- **Frontend**: `cd frontend && npm run dev` (Runs at `http://localhost:5173`)
+Open `http://localhost:5173` in your browser.
 
 ---
 
-## 🧪 System Health & Pre-Demo Verification
+## API Overview
 
-We provide an automated sanity checker script to test system integration before stage presentation:
+| Endpoint | Method | Description |
+| :--- | :---: | :--- |
+| `POST /upload` | `POST` | Uploads a PDF paper, parses chunks, and indexes embeddings into ChromaDB. |
+| `GET /paper/{id}/metadata` | `GET` | Retrieves paper title, authors, abstract, and keywords. |
+| `POST /paper/{id}/claims` | `POST` | Runs the 4-phase CoVe verification pipeline to extract grounded claims. |
+| `POST /paper/{id}/flashcards` | `POST` | Generates active-recall flashcards from verified claims. |
+| `POST /paper/{id}/conceptmap` | `POST` | Generates topological graph nodes and relationship edges. |
+| `POST /paper/{id}/brief` | `POST` | Synthesizes a structured technical brief. |
+| `GET /paper/{id}/summary` | `GET` | Generates executive and detailed technical summaries. |
+| `GET /paper/{id}/limitations` | `GET` | Extracts paper constraints with source citations. |
+| `POST /paper/{id}/ask` | `POST` | Performs grounded RAG Q&A with exact quote and page citations. |
+
+---
+
+## Verification & Testing
+
+To run the automated integration test suite against a running local backend:
+
 ```bash
-python test_sanity.py
-```
-A successful test run outputs:
-```text
-============================================================
-EPISTEME Backend Sanity Checklist
-============================================================
-[PASS] - FastAPI Health Check (/) 
-[PASS] - Upload Ingestion (/upload) [ID: 3a9f1b-...]
-[PASS] - Metadata Extraction (/paper/{id}/metadata)
-[PASS] - CoVe Claims Verification (/paper/{id}/claims)
-[PASS] - Grounding Q&A Engine (/paper/{id}/ask)
-============================================================
+python tests/test_api.py
 ```
 
 ---
 
-## 👥 Engineering Team
+## Future Scope
 
-- **Lead AI & Backend Architect**: *[Team Member 1]* - CoVe Engine, Vector Store, LLM Retries
-- **Full-Stack Systems Engineer**: *[Team Member 2]* - FastAPI Server, Caching & Route Hardening
-- **Frontend & UI Architect**: *[Team Member 3]* - React Shell, 2D Graph Canvas, Citation Cards & FSRS Deck
+- Multi-paper cross-referencing and literature comparative analysis.
+- Anki export integration (.apkg format) for generated flashcards.
+- Support for local offline LLM providers via Ollama / vLLM.
+
+---
+
+## License
+
+Distributed under the MIT License. See `LICENSE` for details.

@@ -1,79 +1,94 @@
 from typing import List, Literal
 from pydantic import BaseModel, Field
 
+
 class Citation(BaseModel):
-    text: str = Field(..., description="The exact verbatim quote from the text")
-    page: int = Field(..., description="The integer page number")
-    chunk_id: str = Field(..., description="The UUID of the chunk")
-    page_display: str = Field(default="", description="Formatted page range string e.g. '4-5' or '4'")
+    text: str = Field(..., description="Verbatim quote from source text")
+    page: int = Field(..., description="1-based page index")
+    chunk_id: str = Field(..., description="Unique chunk UUID")
+    page_display: str = Field(default="", description="Human-readable page range string")
+
 
 class UploadResponse(BaseModel):
-    paper_id: str = Field(..., description="Unique identifier for the uploaded paper")
+    paper_id: str = Field(..., description="Unique ID assigned to the uploaded paper")
+
 
 class MetadataResponse(BaseModel):
-    title: str = Field(..., description="Title of the paper")
-    authors: List[str] = Field(..., description="List of authors")
-    abstract: str = Field(..., description="Abstract of the paper")
+    title: str = Field(..., description="Paper title")
+    authors: List[str] = Field(..., description="List of paper authors")
+    abstract: str = Field(..., description="Paper abstract")
     keywords: List[str] = Field(..., description="Keywords associated with the paper")
-    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
+    is_fallback: bool = Field(default=False, description="True if fallback response was served")
+
 
 class AskResponse(BaseModel):
-    answer: str = Field(..., description="Answer generated from the query")
-    citations: List[Citation] = Field(..., description="List of citations verifying the answer")
-    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
+    answer: str = Field(..., description="Synthesized grounded answer")
+    citations: List[Citation] = Field(..., description="Supporting citations for the answer")
+    is_fallback: bool = Field(default=False, description="True if fallback response was served")
+
 
 class SummaryResponse(BaseModel):
-    executive: str = Field(..., description="Executive summary (1 paragraph)")
-    detailed: str = Field(..., description="Detailed summary")
-    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
+    executive: str = Field(..., description="Executive summary")
+    detailed: str = Field(..., description="Detailed technical breakdown")
+    is_fallback: bool = Field(default=False, description="True if fallback response was served")
+
 
 class ClaimEvidence(BaseModel):
-    claim: str = Field(..., description="Extracted claim from the text")
-    evidence: str = Field(..., description="Verbatim evidence/context supporting the claim")
-    citation: Citation = Field(..., description="Citation details for the evidence")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score between 0.0 and 1.0")
+    claim: str = Field(..., description="Extracted claim text")
+    evidence: str = Field(..., description="Verbatim supporting quote")
+    citation: Citation = Field(..., description="Source citation metadata")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Verification confidence score")
+
 
 class ClaimsResponse(BaseModel):
-    claims: List[ClaimEvidence] = Field(..., description="List of extracted verified claims")
-    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
+    claims: List[ClaimEvidence] = Field(..., description="Extracted verified claims")
+    is_fallback: bool = Field(default=False, description="True if fallback response was served")
+
 
 class Limitation(BaseModel):
-    limitation: str = Field(..., description="Identified limitation of the paper")
-    citation: Citation = Field(..., description="Citation details for the limitation")
+    limitation: str = Field(..., description="Identified paper limitation")
+    citation: Citation = Field(..., description="Source citation metadata")
+
 
 class LimitationsResponse(BaseModel):
     limitations: List[Limitation] = Field(..., description="List of paper limitations")
-    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
+    is_fallback: bool = Field(default=False, description="True if fallback response was served")
+
 
 class Flashcard(BaseModel):
-    question: str = Field(..., description="Question for study")
-    answer: str = Field(..., description="Answer for the question")
-    difficulty: Literal["Easy", "Medium", "Hard"] = Field(..., description="Difficulty level")
+    question: str = Field(..., description="Active recall question")
+    answer: str = Field(..., description="Concise answer")
+    difficulty: Literal["Easy", "Medium", "Hard"] = Field(..., description="Concept difficulty level")
+
 
 class FlashcardsResponse(BaseModel):
-    flashcards: List[Flashcard] = Field(..., description="List of study flashcards")
-    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
+    flashcards: List[Flashcard] = Field(..., description="Generated study flashcards")
+    is_fallback: bool = Field(default=False, description="True if fallback response was served")
+
 
 class Node(BaseModel):
-    id: str = Field(..., description="Unique node ID (e.g., entity or concept)")
-    label: str = Field(..., description="Human-readable label for the node")
+    id: str = Field(..., description="Unique concept node ID")
+    label: str = Field(..., description="Human-readable concept label")
+
 
 class Edge(BaseModel):
-    source: str = Field(..., description="Source node ID")
-    target: str = Field(..., description="Target node ID")
+    source: str = Field(..., description="Source concept node ID")
+    target: str = Field(..., description="Target concept node ID")
     label: str = Field(..., description="Relationship label")
 
+
 class ConceptMapResponse(BaseModel):
-    nodes: List[Node] = Field(..., description="List of concepts (nodes) in the graph")
-    edges: List[Edge] = Field(..., description="List of relations (edges) between concepts")
-    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
+    nodes: List[Node] = Field(..., description="Graph concept nodes")
+    edges: List[Edge] = Field(..., description="Graph relationship edges")
+    is_fallback: bool = Field(default=False, description="True if fallback response was served")
+
 
 class BriefResponse(BaseModel):
-    problem: str = Field(..., description="The main research problem")
-    method: str = Field(..., description="Methodology and approaches used")
-    dataset: str = Field(..., description="Datasets used or collected")
-    results: str = Field(..., description="Key results and achievements")
-    limitations: str = Field(..., description="Core limitations identified")
-    future_work: str = Field(..., description="Suggested future directions")
-    contribution: str = Field(..., description="Main contribution of the work")
-    is_fallback: bool = Field(default=False, description="True if the LLM API failed and offline mock data is being served.")
+    problem: str = Field(..., description="Core research problem")
+    method: str = Field(..., description="Methodology description")
+    dataset: str = Field(..., description="Datasets used")
+    results: str = Field(..., description="Key results summary")
+    limitations: str = Field(..., description="Core limitations")
+    future_work: str = Field(..., description="Future directions")
+    contribution: str = Field(..., description="Primary research contribution")
+    is_fallback: bool = Field(default=False, description="True if fallback response was served")

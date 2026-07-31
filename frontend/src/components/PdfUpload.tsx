@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import { Upload, AlertCircle, Loader2 } from "lucide-react";
+import { apiClient } from "../api/client";
 
 interface PdfUploadProps {
   setPaperId: (paperId: string) => void;
@@ -30,22 +31,9 @@ export const PdfUpload: React.FC<PdfUploadProps> = ({ setPaperId }) => {
     setIsUploading(true);
     setError(null);
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
-      const response = await fetch("http://localhost:8000/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Upload failed. Please check backend status.");
-      }
-
-      const data = await response.json();
-      if (data.paper_id) {
+      const data = await apiClient.uploadPdf(file);
+      if (data && data.paper_id) {
         setPaperId(data.paper_id);
       } else {
         throw new Error("Invalid response from server.");
