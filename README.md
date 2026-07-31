@@ -1,151 +1,122 @@
-# Demon_Slayer-VIvek
-# EPISTEME — 24H Build Roadmap (HackIndia Final Round)
+# EPISTEME: The Antigravity, Self-Verifying Research Engine
 
-## 0. Ground rules
-- **API contract is locked at Hour 0** (see §2). Everyone codes against it in parallel from minute 1 — nobody waits on anybody.
-- Frontend and Graph/Flashcard person use **mock JSON** matching the contract until backend endpoints are live. Swap mock→real at integration checkpoints.
-- Git: one repo, branch per person (`feat/backend`, `feat/ai`, `feat/frontend`, `feat/graph`), merge to `main` at every checkpoint. No one works on `main` directly.
-- Checkpoints: **Hr 4, Hr 9, Hr 16, Hr 20, Hr 23** — everyone stops, pulls, runs the full stack together for 15 min, fixes breakage immediately.
+**EPISTEME** is an AI-powered academic research companion designed to eliminate factual hallucinations, accelerate literature reviews, and combat cognitive fatigue when reading dense scientific papers.
+
+Built during a strict 24-hour hackathon environment utilizing an "antigravity" parallel workflow, EPISTEME decomposes complex academic texts into interactive, verifiable, and visually searchable concept topologies.
 
 ---
 
-## 1. Roles (4 people)
-
-| Role | Owns | Person |
-|---|---|---|
-| **A — Backend/Ingestion Lead** | FastAPI skeleton, PDF parsing, chunking, ChromaDB, upload/query endpoints | ___ |
-| **B — AI/LLM Lead** | All Claude prompts: metadata, Q&A+citation, claims, limitations, flashcards, brief | ___ |
-| **C — Frontend Lead** | React/TS/Tailwind: upload, chat, claims/limitations view, flashcards, brief view | ___ |
-| **D — Graph & Integration Lead** | Concept map extraction+viz, flashcard UI wiring, demo script, bug-fixing across seams | ___ |
-
-Rationale: **B and D never block on A** — B writes prompts against sample chunks locally, D builds graph JSON→viz against a hardcoded fixture. A and C are the only two doing "real" infra work, and they sync via the contract, not via each other's code.
+## The Problem
+1. **RAG Hallucinations**: Standard Retrieval-Augmented Generation (RAG) models frequently hallucinate facts or conflate page sources, leading to incorrect references.
+2. **Dense Summarization Fatigue**: General summaries compress too much information, dropping mathematical definitions and edge-case limitations.
+3. **Memory Decay**: Readers struggle to retain key insights without active recall mechanisms or structural entity mapping.
 
 ---
 
-## 2. API Contract (lock this first, 30 min, all 4 people in the room)
-
-```
-POST /upload                → {paper_id}
-GET  /paper/{id}/metadata   → {title, authors, abstract, keywords}
-POST /paper/{id}/ask        → body {question} → {answer, citations: [{text, page, chunk_id}]}
-GET  /paper/{id}/summary    → {executive, detailed}
-GET  /paper/{id}/claims     → [{claim, evidence, citation, confidence}]
-GET  /paper/{id}/limitations→ [{limitation, citation}]
-GET  /paper/{id}/flashcards → [{question, answer, difficulty}]
-GET  /paper/{id}/conceptmap → {nodes: [{id,label}], edges: [{source,target,label}]}
-GET  /paper/{id}/brief      → {problem, method, dataset, results, limitations, future_work, contribution}
-```
-
-Every citation object is `{text: "<exact quoted source sentence>", page: int, chunk_id: str}`. Every field that can't be found returns `"Not found in paper."` — never omit the key.
-
-C and D build their UIs against this JSON shape starting now, using a static `fixtures/sample_response.json` A commits in the first 30 min.
+## The Solution
+- **Chain-of-Verification (CoVe) Engine**: A 4-phase verification process using `gemini-2.0-flash` that drafts claims, generates verification questions, answers them independently from raw source chunks, and filters out unverified statements.
+- **Explicit Grounding & Citation Cards**: Clickable, hover-glowing references that link claims and answers directly to page-specific verbatim quotes.
+- **Spatial Knowledge Graph**: Interactive force-directed node-link layouts highlighting relationships between theoretical concepts in the text.
+- **Derived Artifact Pipeline**: Structured creation of active recall flip-flashcards, technical briefs, and executive summaries from verified factual claims.
 
 ---
 
-## 3. Backend skeleton (Person A) — folder structure, build first
+## Technical Architecture
 
-```
-backend/
-  main.py
-  requirements.txt
-  core/
-    config.py
-    chroma.py          # client + collection init
-  ingestion/
-    parser.py           # PyMuPDF extract text+pages
-    chunker.py           # semantic chunk ~500 tok, keep page num per chunk
-    embedder.py           # bge-small-en-v1.5 via sentence-transformers
-  routes/
-    upload.py
-    query.py             # /ask, /summary, /claims, /limitations
-    generate.py           # /flashcards, /conceptmap, /brief
-  storage/
-    papers/              # raw PDFs saved here, paper_id = uuid
-  fixtures/
-    sample_response.json
+```mermaid
+graph TD
+    PDF[PDF Upload] -->|fitz parser| Chunks[Semantic Chunks]
+    Chunks -->|add_paper| Chroma[(ChromaDB + BGE-small)]
+    
+    %% Claims Pipeline
+    Chroma -->|retrieve chunks| CoVe[CoVe Engine]
+    CoVe -->|Phase 1: draft| Draft[Draft Claims]
+    Draft -->|Phase 2: query| Questions[Verification Questions]
+    Questions -->|Phase 3: independent| Answers[Verification Answers]
+    Answers -->|Phase 4: synthesize| VerifiedClaims[Verified Claims JSON]
+    
+    %% Cache & Generators
+    VerifiedClaims -->|write cache| FileCache[(Local JSON Cache)]
+    FileCache -->|Claims JSON| Gen1[Flashcard Generator]
+    FileCache -->|Claims JSON| Gen2[Concept Map Generator]
+    FileCache -->|Claims JSON| Gen3[Brief Generator]
+    
+    %% API & Frontend
+    Gen1 -->|Flashcards| API[FastAPI Server]
+    Gen2 -->|Concept Map| API
+    Gen3 -->|Technical Brief| API
+    
+    API -->|HTTP Endpoints| UI[React UI Dashboard]
 ```
 
-`requirements.txt`: `fastapi uvicorn python-multipart pymupdf sentence-transformers chromadb anthropic pydantic`
+---
 
-Retrieval: on `/ask`, embed question → Chroma `query(top_k=6)` → pass chunks+page numbers to Person B's prompt function → return.
+## Tech Stack
+*   **Backend**: Python 3.10+, FastAPI (Endpoints & Routing), ChromaDB (Vector Store), Sentence-Transformers (`BAAI/bge-small-en-v1.5`), PyMuPDF (fitz), google-genai SDK (`gemini-2.0-flash`).
+*   **Frontend**: React 18+, TypeScript, Tailwind CSS v4, Vite (Fast Bundler), `react-force-graph-2d` (HTML5 Canvas visualization).
 
 ---
 
-## 4. AI/LLM prompt design (Person B)
+## Quick Start & Installation
 
-One core principle for every prompt: **give Claude the chunks with page numbers inline, force it to quote verbatim, force `"Not found in paper."` when absent.** Same skeleton reused for claims/limitations/flashcards — only the extraction schema changes.
+### 1. Prerequisites
+Ensure you have **Python 3.10+** and **Node.js 18+** installed.
 
-Prompts to write (as pure functions `chunks -> Claude call -> parsed JSON`, no FastAPI dependency, so B can test with fixture chunks immediately):
-
-1. `extract_metadata(first_page_chunks)` → title/authors/abstract/keywords
-2. `answer_question(question, retrieved_chunks)` → answer + citations (used by /ask)
-3. `summarize(all_chunks)` → executive (1 para) + detailed
-4. `extract_claims(all_chunks)` → list of {claim, evidence, citation, confidence 0-1}
-5. `extract_limitations(all_chunks)` → list of {limitation, citation}
-6. `generate_flashcards(claims + limitations)` → {question, answer, difficulty} — derive from claims already extracted, don't re-read the paper, saves a pass
-7. `generate_conceptmap(claims + metadata)` → {nodes, edges} JSON — also derived, not a fresh paper read
-8. `generate_brief(summary + claims + limitations)` → structured brief — derived, not fresh
-
-**Key speed trick:** steps 6/7/8 consume the *outputs* of 3/4/5, not the raw paper. That's 3 LLM calls saved per paper and it's more grounded (less hallucination surface).
-
-Verification (light CoVe, 1 pass only): after claims/limitations extraction, one follow-up Claude call: "here are claims + the exact chunks — flag any claim whose citation text does not actually support it." Drop or flag failures. Don't iterate further — no time.
-
-All prompts use strict system prompt: quotes must be exact substrings of provided chunks; if you can't find it, output `"Not found in paper."`; never fabricate a citation.
-
----
-
-## 5. Frontend (Person C)
-
-```
-frontend/src/
-  api/client.ts          # typed fetch wrappers matching the contract
-  types/index.ts          # shared TS interfaces from contract
-  pages/
-    Upload.tsx
-    PaperView.tsx          # tabs: Chat | Summary | Claims | Limitations | Brief
-  components/
-    ChatPanel.tsx           # question box + answer + citation cards (click→highlight source text)
-    ClaimsTable.tsx
-    LimitationsList.tsx
-    BriefView.tsx
+### 2. Set Up the Backend
+Clone the repository and install the dependencies:
+```bash
+# Install Python packages
+pip install fastapi uvicorn pydantic pymupdf sentence-transformers chromadb requests google-genai
 ```
 
-Build against `fixtures/sample_response.json` first. Citation cards should show the exact quoted text + page number — that's a judge-visible "grounding" moment, make it prominent, not buried.
+Create a `.env` file in the root directory and add your Gemini API Key:
+```text
+GEMINI_API_KEY=your-actual-api-key-here
+```
+*(Note: If no API key is specified, the server operates on pre-cached mock data for verification/demo purposes).*
 
-Skip: auth, multi-paper library, dark mode toggle, animations. Judges score grounding/citation/clarity, not polish.
+### 3. Set Up the Frontend
+Navigate into the `frontend` folder and install the node dependencies:
+```bash
+cd frontend
+npm install
+```
 
----
+### 4. Run the Servers Concurrently
+You can launch both servers with one command using the helper script in the root directory:
+```bash
+# From the root directory
+chmod +x run.sh
+./run.sh
+```
 
-## 6. Concept map + flashcards UI + integration (Person D)
-
-- Concept map viz: use `react-force-graph-2d` or `vis-network` (fastest to wire, minimal config) — feed it the `/conceptmap` JSON directly, no NetworkX needed on frontend; NetworkX (if used at all) only for backend-side layout/export, skip if the JS lib does layout itself. **Recommendation: skip NetworkX entirely** — let the graph JS lib do force-directed layout, one less moving part.
-- Flashcard UI: simple flip-card component, question/answer/difficulty badge, no spaced-repetition logic — just a static deck.
-- From Hour 4 onward, D's second job is **integration firefighting**: sit at the seam between A/B (backend+AI) and C (frontend), catch contract drift immediately, run the app end-to-end every checkpoint.
-- Hour 20+: owns the demo script — pick 1 paper, rehearse the exact click-path that shows grounding (ask a question → show citation → show flagged/verified claim → flashcards → concept map).
-
----
-
-## 7. Hour-by-hour timeline
-
-| Hrs | A (Backend) | B (AI) | C (Frontend) | D (Graph/Integration) |
-|---|---|---|---|---|
-| 0–0.5 | Lock API contract with everyone | same | same | same |
-| 0.5–4 | FastAPI skeleton, upload, PyMuPDF parse, chunk, Chroma ingest | Write+test metadata & answer_question prompts on sample PDF chunks (local script, no server) | Scaffold app, build against fixture JSON | Build fixture conceptmap JSON, wire graph viz against it |
-| **4 — checkpoint** | Upload+ingest working | Prompts return clean JSON | Upload UI + chat UI hitting fixtures | Graph renders from fixture |
-| 4–9 | `/ask` endpoint wired to real retrieval+B's prompt | claims + limitations prompts | Wire ChatPanel to real `/ask`; build Claims/Limitations tabs | Wire flashcard/concept map to real backend as those land |
-| **9 — checkpoint** | `/ask`, `/claims`, `/limitations` all real end-to-end | verification pass added | Chat + Claims + Limitations tabs fully live | Concept map still on fixture (blocked on B) — fine |
-| 9–16 | `/flashcards`, `/conceptmap`, `/brief` endpoints (thin wrappers over B's functions) | flashcards, conceptmap, brief prompt functions | Brief view + flashcard UI polish | Concept map wired to real endpoint; flashcard flip UI done |
-| **16 — checkpoint** | All 8 endpoints live | all 8 prompt functions done | All tabs live end-to-end | Full app runs start to finish once |
-| 16–20 | Bug fixes, error handling (timeouts, bad PDFs), CORS | Prompt quality pass on 2-3 real test papers, tighten "Not found" behavior | Visual polish, loading states, citation highlight UX | Full regression pass, fix seams |
-| **20 — checkpoint** | Freeze backend | Freeze prompts | Freeze frontend | Full demo run-through |
-| 20–23 | On call for fires only | On call for fires only | On call for fires only | Demo script rehearsal, slides/talking points, pick best demo paper |
-| 23–24 | Buffer | Buffer | Buffer | Final rehearsal, submission |
+Alternatively, launch them in separate terminals:
+*   **Backend**: `uvicorn main:app --reload --port 8000` (runs on `http://localhost:8000`)
+*   **Frontend**: `cd frontend && npm run dev` (runs on `http://localhost:5173`)
 
 ---
 
-## 8. Cut list — do not touch unless everything above is done early
-Neo4j, Qdrant, FSRS scheduling, multi-provider LLM failover, Celery/async queues, auth, multi-paper library, source-text PDF-embedded highlighting (a citation *card* with quoted text is enough — don't build a PDF viewer overlay unless hours remain).
+## System Health & Sanity Testing
+We provide a sanity verification script in the root directory. To run tests and verify that the ingestion pipeline, CoVe engine, caching, and endpoints are communicating successfully:
+```bash
+python test_sanity.py
+```
+A passing test suite outputs:
+```text
+============================================================
+EPISTEME Backend Sanity Checklist
+============================================================
+[PASS] - FastAPI Health Check (/) 
+[PASS] - Upload Ingestion (/upload) [ID: 9a01f7-...]
+[PASS] - Metadata Extraction (/paper/{id}/metadata)
+[PASS] - CoVe Claims Verification (/paper/{id}/claims)
+[PASS] - Grounding Q&A Engine (/paper/{id}/ask)
+============================================================
+```
 
 ---
 
-Say the word and I'll start dropping actual code for whichever piece you want first — Backend skeleton (§3) is the right place to start since B and C's fixture work depends on the contract, not on A's code, so A can go first without blocking anyone.
+## Engineering Team
+*   **Lead AI Architect**: *[Name]* - LLM, Vector Embeddings, Ingestion Pipeline
+*   **Full-Stack Engineer**: *[Name]* - FastAPI Server, Caching, and Integrations
+*   **Frontend Architect**: *[Name]* - React Shell, 2D Knowledge Graph, active recall deck
